@@ -18,12 +18,12 @@ jobs:
           key: hadoop-repo
           restore-keys: hadoop-repo
       - name: Checkout this repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.REPO_SCOPED_TOKEN }}
           path: checker
       - name: Checkout hadoop repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         #if: ${{ hashFiles('hadoop/pom.xml') != '' }}
         with:
           repository: apache/hadoop

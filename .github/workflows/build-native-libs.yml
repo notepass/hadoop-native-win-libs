@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - run: git config --system core.longpaths true
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: apache/hadoop
           ref: ${{ github.ref_name }}
