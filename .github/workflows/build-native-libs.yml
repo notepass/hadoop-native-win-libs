@@ -15,7 +15,7 @@ jobs:
           repository: apache/hadoop
           ref: ${{ github.ref_name }}
       - name: Cache Maven packages
-        uses: actions/cache@v3.3.2
+        uses: actions/cache@v4.3.0
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2
