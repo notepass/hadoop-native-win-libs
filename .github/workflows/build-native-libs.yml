@@ -24,11 +24,11 @@ jobs:
           path: ~/.m2
           key: ${{ runner.os }}-m2
           restore-keys: ${{ runner.os }}-m2
-      - name: Install Windows SDK 10.0.22621
+      - name: Install Windows SDK 10.0.19041
         shell: pwsh
         run: |
           $installer = "$env:TEMP\winsdksetup.exe"
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2311806" -OutFile $installer
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2311805" -OutFile $installer
           $proc = Start-Process -FilePath $installer `
             -ArgumentList "/features OptionId.DesktopCPPx64 /quiet /norestart /log $env:TEMP\winsdk-install.log" `
             -Wait -PassThru -NoNewWindow
@@ -38,7 +38,7 @@ jobs:
           }
       - uses: ilammy/msvc-dev-cmd@v1
         with:
-          sdk: "10.0.22621.0"
+          sdk: "10.0.19041.0"
       - name: Pre debug output
         run: |
           msbuild /version
