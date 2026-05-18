@@ -24,6 +24,8 @@ jobs:
 #      - name: Setup VS Dev Environment
 #        uses: seanmiddleditch/gha-setup-vsdevenv@v4
       - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          sdk: "10.0.19041.0"
       - name: Pre debug output
         run: |
           msbuild /version
