@@ -27,22 +27,38 @@ jobs:
       - name: Inject compat shim for GetFileInformationByName
         shell: pwsh
         run: |
-          # MSBuild auto-imports Directory.Build.props from the project dir or any
-          # ancestor. Placing it at the workspace root causes it to be picked up by
-          # every .vcxproj under the Hadoop checkout.
-          # We rename Hadoop's GetFileInformationByName to a private symbol so it
-          # no longer conflicts with the identically-named function added in newer
-          # Windows SDK versions of fileapi.h.
-          $content = @'
+          # Write a force-include shim header that renames the SDK's
+          # GetFileInformationByName before fileapi.h declares it, so Hadoop's
+          # own declaration in winutils.h does not cause a C2733 conflict.
+          $shim = "$env:GITHUB_WORKSPACE\hadoop_win_compat.h"
+          Set-Content -Path $shim -Value @'
+          #pragma once
+          // Rename the SDK symbol before fileapi.h declares it.
+          // Hadoop's winutils.h declares its own GetFileInformationByName (DWORD
+          // return), but newer Windows SDK fileapi.h declares a different one
+          // (BOOL return). Both inside extern "C" => C2733. We intercept by
+          // defining GetFileInformationByName as a macro alias before windows.h
+          // runs, so the SDK declaration lands under the alias, then we #undef
+          // the macro so Hadoop's declaration comes through under the real name.
+          #define GetFileInformationByName _SdkGetFileInformationByName
+          #ifndef WIN32_LEAN_AND_MEAN
+          #define WIN32_LEAN_AND_MEAN
+          #endif
+          #include <windows.h>
+          #undef GetFileInformationByName
+          '@
+
+          # MSBuild auto-imports Directory.Build.props from any ancestor of the
+          # .vcxproj. Placing it at the workspace root covers all Hadoop projects.
+          Set-Content -Path "$env:GITHUB_WORKSPACE\Directory.Build.props" -Value @"
           <Project>
             <ItemDefinitionGroup>
               <ClCompile>
-                <PreprocessorDefinitions>GetFileInformationByName=HadoopGetFileInformationByName;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+                <ForcedIncludeFiles>$shim;%(ForcedIncludeFiles)</ForcedIncludeFiles>
               </ClCompile>
             </ItemDefinitionGroup>
           </Project>
-          '@
-          Set-Content -Path "$env:GITHUB_WORKSPACE\Directory.Build.props" -Value $content
+          "@
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Pre debug output
         run: |
