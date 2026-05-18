@@ -24,21 +24,26 @@ jobs:
           path: ~/.m2
           key: ${{ runner.os }}-m2
           restore-keys: ${{ runner.os }}-m2
-      - name: Install Windows SDK 10.0.19041
+      - name: Inject compat shim for GetFileInformationByName
         shell: pwsh
         run: |
-          $installer = "$env:TEMP\winsdksetup.exe"
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2311805" -OutFile $installer
-          $proc = Start-Process -FilePath $installer `
-            -ArgumentList "/features OptionId.DesktopCPPx64 /quiet /norestart /log $env:TEMP\winsdk-install.log" `
-            -Wait -PassThru -NoNewWindow
-          if ($proc.ExitCode -ne 0) {
-            Get-Content "$env:TEMP\winsdk-install.log" -Tail 50
-            exit $proc.ExitCode
-          }
+          # MSBuild auto-imports Directory.Build.props from the project dir or any
+          # ancestor. Placing it at the workspace root causes it to be picked up by
+          # every .vcxproj under the Hadoop checkout.
+          # We rename Hadoop's GetFileInformationByName to a private symbol so it
+          # no longer conflicts with the identically-named function added in newer
+          # Windows SDK versions of fileapi.h.
+          $content = @'
+          <Project>
+            <ItemDefinitionGroup>
+              <ClCompile>
+                <PreprocessorDefinitions>GetFileInformationByName=HadoopGetFileInformationByName;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+              </ClCompile>
+            </ItemDefinitionGroup>
+          </Project>
+          '@
+          Set-Content -Path "$env:GITHUB_WORKSPACE\Directory.Build.props" -Value $content
       - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          sdk: "10.0.19041.0"
       - name: Pre debug output
         run: |
           msbuild /version
