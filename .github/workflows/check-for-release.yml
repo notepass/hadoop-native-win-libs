@@ -29,6 +29,11 @@ jobs:
           new_tags=""
           while IFS= read -r tag; do
             [ -z "$tag" ] && continue
+
+            if ! [[ "$tag" =~ ^rel/release-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              continue
+            fi
+
             tag_ver="${tag#rel/release-}"
 
             if [ "$(printf '%s\n%s\n' "$baseline_ver" "$tag_ver" | sort -V | tail -n 1)" != "$tag_ver" ]; then
