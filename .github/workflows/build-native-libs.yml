@@ -17,6 +17,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      issues: write
     steps:
       - run: git config --system core.longpaths true
       - uses: actions/checkout@v6
@@ -70,3 +71,59 @@ jobs:
           prerelease: ${{ !startsWith(inputs.hadoop_ref, 'rel/') }}
           make_latest: ${{ startsWith(inputs.hadoop_ref, 'rel/') && inputs.mark_latest == 'true' && 'true' || 'false' }}
           files: ${{ github.workspace }}\hadoop-win-utils.zip
+      - name: Create blocking tag on failure
+        if: failure() && startsWith(inputs.hadoop_ref, 'rel/release-')
+        env:
+          GH_TOKEN: ${{ secrets.REPO_SCOPED_TOKEN != '' && secrets.REPO_SCOPED_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $repo = "${{ github.repository }}"
+          $tag = "${{ inputs.hadoop_ref }}"
+
+          try {
+            gh api "/repos/$repo/git/ref/tags/$tag" | Out-Null
+            Write-Host "Blocking tag already exists: $tag"
+          }
+          catch {
+            if ($_.Exception.Message -match "404") {
+              gh api --method POST "/repos/$repo/git/refs" -f ref="refs/tags/$tag" -f sha="${{ github.sha }}"
+              Write-Host "Created blocking tag: $tag"
+            }
+            else {
+              throw
+            }
+          }
+      - name: Create issue on failure
+        if: failure() && startsWith(inputs.hadoop_ref, 'rel/release-')
+        env:
+          GH_TOKEN: ${{ secrets.REPO_SCOPED_TOKEN != '' && secrets.REPO_SCOPED_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $repo = "${{ github.repository }}"
+          $tag = "${{ inputs.hadoop_ref }}"
+          $title = "Binary build failed for $tag"
+          $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $body = @"
+          The automated build failed for `$tag`.
+
+          - Workflow run: $runUrl
+          - Workflow: `${{ github.workflow }}`
+          - Attempt: `${{ github.run_attempt }}`
+
+          This tag has been created in this repository to block automatic retries by the checker workflow.
+          Re-run this workflow manually for `$tag` after fixing the underlying issue.
+          "@
+
+          $issuesJson = gh issue list --repo $repo --state open --search "$title in:title" --json number,title
+          $issues = $issuesJson | ConvertFrom-Json
+          $existing = $issues | Where-Object { $_.title -eq $title } | Select-Object -First 1
+
+          if ($null -ne $existing) {
+            Write-Host "Issue already open: #$($existing.number)"
+          }
+          else {
+            gh issue create --repo $repo --title $title --body $body | Out-Null
+            Write-Host "Created failure issue for $tag"
+          }
