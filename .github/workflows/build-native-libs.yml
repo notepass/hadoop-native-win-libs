@@ -62,15 +62,6 @@ jobs:
           </Project>
           "@
       - uses: ilammy/msvc-dev-cmd@v1
-      - name: Pre debug output
-        run: |
-          msbuild /version
-          mvn -v
-          gci env:* | sort-object name
-          echo "Ref name: $env:GITHUB_REF_NAME"
-          echo "Repo: $env:GITHUB_REPOSITORY"
-          echo "Workspace dir: $env:GITHUB_WORKSPACE"
-      - run: "pwd"
       - name: Run native build
         run: "mvn package '-Pnative-win' -DskipTests '-Dmaven.javadoc.skip=true' -pl ':hadoop-common,:hadoop-maven-plugins'"
         continue-on-error: false
