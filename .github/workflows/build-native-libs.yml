@@ -21,7 +21,9 @@ jobs:
       - name: Checkout pipeline repository (helper scripts)
         uses: actions/checkout@v6
         with:
-          path: .pipeline
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: pipeline-src
       - name: Cache Maven packages
         uses: actions/cache@v5.0.5
         with:
@@ -31,7 +33,12 @@ jobs:
       - name: Inject compat shim for GetFileInformationByName
         shell: pwsh
         run: |
-          & "$env:GITHUB_WORKSPACE\.pipeline\compat\inject-winutils-shim.ps1" -HadoopRoot "$env:GITHUB_WORKSPACE"
+          $script = "$env:GITHUB_WORKSPACE\pipeline-src\compat\inject-winutils-shim.ps1"
+          if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
+            Get-ChildItem -Force "$env:GITHUB_WORKSPACE"
+            throw "Missing helper script: $script"
+          }
+          & $script -HadoopRoot "$env:GITHUB_WORKSPACE"
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Run native build
         run: "mvn package '-Pnative-win' -DskipTests '-Dmaven.javadoc.skip=true' -pl ':hadoop-common,:hadoop-maven-plugins'"
