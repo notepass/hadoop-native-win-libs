@@ -8,26 +8,19 @@
  * When both declarations appear in the same translation unit, MSVC emits
  * C2733 because you cannot have two extern "C" declarations of the same name.
  *
- * Fix: rename the SDK's version before fileapi.h is processed, by defining
- * GetFileInformationByName as a macro alias. fileapi.h's declaration then
- * becomes a declaration of the aliased name. After fileapi.h is done, we
- * undefine the macro so Hadoop's own declaration in winutils.h comes through
- * under its original name without conflict.
+ * Fix: define GetFileInformationByName as a macro alias before windows.h is
+ * included, so the SDK declaration lands under the alias (_SdkGetFileInformationByName).
+ * Then #undef the macro so Hadoop's own declaration in winutils.h comes through
+ * under the real name without conflict.
  *
- * This header must be force-included (/FI) before any other header so the
- * macro is in effect when fileapi.h is first processed.
+ * Do NOT define WIN32_LEAN_AND_MEAN here — Hadoop code relies on the full
+ * windows.h (including winioctl.h for FSCTL_GET_REPARSE_POINT etc.).
+ *
+ * This header is force-included (/FI via ForcedIncludeFiles in
+ * Directory.Build.props) before any source file, so the macro rename is in
+ * effect when fileapi.h is first processed.
  */
 #pragma once
-
-/* Rename the SDK symbol before fileapi.h declares it. */
 #define GetFileInformationByName _SdkGetFileInformationByName
-
-/* Pull in windows.h (which includes fileapi.h). The SDK declaration of
- * GetFileInformationByName will be parsed as _SdkGetFileInformationByName. */
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
 #include <windows.h>
-
-/* Remove the rename macro so Hadoop's own declaration passes through. */
 #undef GetFileInformationByName

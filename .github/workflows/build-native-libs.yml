@@ -41,9 +41,6 @@ jobs:
           // runs, so the SDK declaration lands under the alias, then we #undef
           // the macro so Hadoop's declaration comes through under the real name.
           #define GetFileInformationByName _SdkGetFileInformationByName
-          #ifndef WIN32_LEAN_AND_MEAN
-          #define WIN32_LEAN_AND_MEAN
-          #endif
           #include <windows.h>
           #undef GetFileInformationByName
           '@
