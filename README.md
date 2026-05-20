@@ -6,6 +6,27 @@ actions, thus making the build process transparent.
 
 *The download of the build binaries is possible via the "releases" section.*
 
+## Important: WinSDK compatibility shim in the build pipeline
+Modern Windows SDK versions declare `GetFileInformationByName` in `fileapi.h`, while Hadoop's
+`winutils` code also declares a function with the same C symbol name but a different signature.
+That combination breaks the build (`C2733` during compile, and depending on workaround order also
+`LNK2005` during link).
+
+To keep upstream Hadoop sources untouched, this repository applies a build-time shim in
+`.github/workflows/build-native-libs.yml`:
+
+- a temporary header is force-included for `libwinutils` and `winutils` only
+- `windows.h` is included first
+- Hadoop's `GetFileInformationByName` references are macro-renamed to
+  `Hadoop_GetFileInformationByName`
+
+This avoids the SDK collision while preserving normal Hadoop runtime behavior (Hadoop usually uses
+`winutils.exe` as a process, not direct linking to this symbol).
+
+If you directly link against `libwinutils.lib` from external native code and expect an exported
+symbol named `GetFileInformationByName`, note that this build will expose Hadoop's implementation
+under `Hadoop_GetFileInformationByName` instead.
+
 ## How does this repo work?
 For each release tag generated in the [apache/hadoop](https://github.com/apache/hadoop) repo, this repo will also
 generate a tag. The creation of the tag will then trigger the build pipeline. This was done, so that the windows runner
