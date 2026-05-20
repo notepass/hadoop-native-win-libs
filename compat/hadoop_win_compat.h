@@ -2,25 +2,31 @@
  * Compatibility shim for building Apache Hadoop winutils against Windows SDK
  * versions that declare GetFileInformationByName in fileapi.h.
  *
- * Hadoop's winutils.h declares its own GetFileInformationByName (returning
- * DWORD) inside an extern "C" block. The Windows SDK fileapi.h declares a
- * different GetFileInformationByName (returning BOOL, different parameters).
- * When both declarations appear in the same translation unit, MSVC emits
- * C2733 because you cannot have two extern "C" declarations of the same name.
+ * Problem
+ * -------
+ * Newer Windows SDK fileapi.h declares:
+ *   BOOL GetFileInformationByName(PCWSTR, FILE_INFO_BY_NAME_CLASS, PVOID, DWORD)
+ * Hadoop winutils.h (line 129) declares its own:
+ *   DWORD GetFileInformationByName(LPCWSTR, LPWIN32_FILE_ATTRIBUTE_DATA)
+ * Both inside extern "C" => MSVC C2733 (cannot overload in extern "C").
+ * Additionally, kernel32.lib exports GetFileInformationByName, so if Hadoop's
+ * object file also defines it, the linker emits LNK2005.
  *
- * Fix: define GetFileInformationByName as a macro alias before windows.h is
- * included, so the SDK declaration lands under the alias (_SdkGetFileInformationByName).
- * Then #undef the macro so Hadoop's own declaration in winutils.h comes through
- * under the real name without conflict.
+ * Fix
+ * ---
+ * Define GetFileInformationByName as a macro alias (Hadoop_GetFileInformationByName)
+ * BEFORE windows.h is included. This renames BOTH the SDK declaration (in
+ * fileapi.h) AND Hadoop's own declaration and definition everywhere this shim
+ * is active. The original name is then owned solely by kernel32 and is never
+ * referenced, so neither conflict occurs.
  *
- * Do NOT define WIN32_LEAN_AND_MEAN here — Hadoop code relies on the full
- * windows.h (including winioctl.h for FSCTL_GET_REPARSE_POINT etc.).
+ * The macro is intentionally NOT #undef'd — it must remain active throughout
+ * each translation unit so that Hadoop's function definition and all call sites
+ * consistently use the renamed symbol.
  *
  * This header is force-included (/FI via ForcedIncludeFiles in
- * Directory.Build.props) before any source file, so the macro rename is in
- * effect when fileapi.h is first processed.
+ * Directory.Build.props) before any source file.
  */
 #pragma once
-#define GetFileInformationByName _SdkGetFileInformationByName
+#define GetFileInformationByName Hadoop_GetFileInformationByName
 #include <windows.h>
-#undef GetFileInformationByName
