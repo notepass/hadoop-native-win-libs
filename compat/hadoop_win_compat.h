@@ -14,19 +14,17 @@
  *
  * Fix
  * ---
- * Define GetFileInformationByName as a macro alias (Hadoop_GetFileInformationByName)
- * BEFORE windows.h is included. This renames BOTH the SDK declaration (in
- * fileapi.h) AND Hadoop's own declaration and definition everywhere this shim
- * is active. The original name is then owned solely by kernel32 and is never
- * referenced, so neither conflict occurs.
+ * Include windows.h first so the SDK declaration keeps the original symbol
+ * name, then define GetFileInformationByName as a macro alias
+ * (Hadoop_GetFileInformationByName). This renames Hadoop's declaration,
+ * definition and call sites everywhere this shim is active.
  *
- * The macro is intentionally NOT #undef'd — it must remain active throughout
- * each translation unit so that Hadoop's function definition and all call sites
- * consistently use the renamed symbol.
+ * The macro is intentionally NOT #undef'd so each translation unit consistently
+ * uses the renamed Hadoop symbol.
  *
  * This header is force-included (/FI via ForcedIncludeFiles in
  * Directory.Build.props) before any source file.
  */
 #pragma once
-#define GetFileInformationByName Hadoop_GetFileInformationByName
 #include <windows.h>
+#define GetFileInformationByName Hadoop_GetFileInformationByName

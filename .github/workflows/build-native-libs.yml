@@ -29,32 +29,32 @@ jobs:
         run: |
           # Problem: newer Windows SDK fileapi.h declares
           #   BOOL GetFileInformationByName(...)
-          # Hadoop winutils.h declares its own
+          # while Hadoop winutils.h declares
           #   DWORD GetFileInformationByName(...)
-          # Both inside extern "C" => C2733 at compile time.
-          # kernel32.lib also exports GetFileInformationByName => LNK2005 at link time.
+          # inside extern "C". That causes C2733.
           #
-          # Fix: rename Hadoop's function to Hadoop_GetFileInformationByName
-          # everywhere using a macro that is active for all source files via /FI.
-          # The macro is defined BEFORE windows.h so the SDK declaration also lands
-          # under the renamed symbol. The kernel32 export under the original name is
-          # then never referenced and causes no conflict.
+          # Fix: include windows.h first, then define a macro that renames only
+          # Hadoop's declaration/definition/call sites to a private symbol.
+          # This avoids both compile-time declaration conflict and linker symbol
+          # collision with kernel32's GetFileInformationByName export.
           $shim = "$env:GITHUB_WORKSPACE\hadoop_win_compat.h"
           Set-Content -Path $shim -Value @'
           #pragma once
-          // Rename GetFileInformationByName throughout all Hadoop winutils source
-          // files. This macro is defined before windows.h so the SDK declaration
-          // in fileapi.h also lands under the renamed symbol, preventing both the
-          // C2733 compiler conflict and the LNK2005 linker conflict with kernel32.
-          #define GetFileInformationByName Hadoop_GetFileInformationByName
+          // Important: include windows.h first so the SDK declaration keeps the
+          // original symbol name.
           #include <windows.h>
+
+          // Rename only Hadoop's symbol (winutils.h declaration, definition and
+          // call sites in Hadoop source files).
+          #define GetFileInformationByName Hadoop_GetFileInformationByName
           '@
 
           # MSBuild auto-imports Directory.Build.props from any ancestor of the
-          # .vcxproj. Placing it at the workspace root covers all Hadoop projects.
+          # .vcxproj. Placing it at the workspace root lets us scope this fix only
+          # to the winutils projects.
           Set-Content -Path "$env:GITHUB_WORKSPACE\Directory.Build.props" -Value @"
           <Project>
-            <ItemDefinitionGroup>
+            <ItemDefinitionGroup Condition="'`$(MSBuildProjectName)'=='libwinutils' Or '`$(MSBuildProjectName)'=='winutils'">
               <ClCompile>
                 <ForcedIncludeFiles>$shim;%(ForcedIncludeFiles)</ForcedIncludeFiles>
               </ClCompile>
