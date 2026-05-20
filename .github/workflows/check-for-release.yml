@@ -83,7 +83,7 @@ jobs:
             fi
 
             echo "Dispatching build-native-libs.yml for ${tag} (mark_latest=${mark_latest})"
-            gh api \
+            echo gh api \
               --method POST \
               -H "Accept: application/vnd.github+json" \
               "/repos/${{ github.repository }}/actions/workflows/build-native-libs.yml/dispatches" \
