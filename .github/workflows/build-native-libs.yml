@@ -81,10 +81,11 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
+          repository: ${{ github.repository }}
           tag_name: ${{ inputs.hadoop_ref }}
+          target_commitish: ${{ github.sha }}
           name: ${{ inputs.hadoop_ref }}
-          body: "Windows native binaries for Apache Hadoop ${{ inputs.hadoop_ref }}"
+          body: "Binaries for hadoop version ${{ inputs.hadoop_ref }}"
           prerelease: ${{ !startsWith(inputs.hadoop_ref, 'rel/') }}
           make_latest: ${{ startsWith(inputs.hadoop_ref, 'rel/') && 'true' || 'false' }}
           files: ${{ github.workspace }}\hadoop-win-utils.zip
-          token: ${{ secrets.RELEASE_SECRET }}
