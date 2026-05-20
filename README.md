@@ -27,6 +27,8 @@ If you directly link against `libwinutils.lib` from external native code and exp
 symbol named `GetFileInformationByName`, note that this build will expose Hadoop's implementation
 under `Hadoop_GetFileInformationByName` instead.
 
+**The last release without this change is 3.4.0**
+
 ## How does this repo work?
 For each release tag generated in the [apache/hadoop](https://github.com/apache/hadoop) repo, this repo will also
 generate a tag. The creation of the tag will then trigger the build pipeline. This was done, so that the windows runner
