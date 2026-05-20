@@ -7,6 +7,11 @@ on:
         description: "Hadoop tag or branch to build (e.g. rel/release-3.4.1)"
         required: true
         type: string
+      mark_latest:
+        description: "Set release as latest"
+        required: false
+        default: "false"
+        type: string
 jobs:
   build-native-libs:
     runs-on: windows-latest
@@ -63,5 +68,5 @@ jobs:
           name: ${{ inputs.hadoop_ref }}
           body: "Binaries for hadoop version ${{ inputs.hadoop_ref }}"
           prerelease: ${{ !startsWith(inputs.hadoop_ref, 'rel/') }}
-          make_latest: ${{ startsWith(inputs.hadoop_ref, 'rel/') && 'true' || 'false' }}
+          make_latest: ${{ startsWith(inputs.hadoop_ref, 'rel/') && inputs.mark_latest == 'true' && 'true' || 'false' }}
           files: ${{ github.workspace }}\hadoop-win-utils.zip

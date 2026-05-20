@@ -7,69 +7,87 @@ on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch:
+permissions:
+  actions: write
+  contents: read
 jobs:
   check-for-new-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Cache hadoop git repo
-        uses: actions/cache@v5.0.5
-        with:
-          path: ${{ github.workspace }}/hadoop
-          key: hadoop-repo
-          restore-keys: hadoop-repo
-      - name: Checkout this repo
-        uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.REPO_SCOPED_TOKEN }}
-          path: checker
-      - name: Checkout hadoop repo
-        uses: actions/checkout@v6
-        #if: ${{ hashFiles('hadoop/pom.xml') != '' }}
-        with:
-          repository: apache/hadoop
-          path: hadoop
-      - name: Output debug info pre
+      - name: Find new Hadoop release tags
+        id: tags
+        shell: bash
         run: |
-          echo -n Dir:
-          pwd
-          echo Sublistings:
-          ls -la ./*
-      - name: Fetch release version
+          set -euo pipefail
+
+          baseline="rel/release-3.5.0"
+          baseline_ver="${baseline#rel/release-}"
+
+          hadoop_tags=$(git ls-remote --refs --tags https://github.com/apache/hadoop.git "rel/release-*" | awk '{print $2}' | sed 's#refs/tags/##')
+          local_tags=$(git ls-remote --refs --tags "https://github.com/${{ github.repository }}.git" "rel/release-*" | awk '{print $2}' | sed 's#refs/tags/##')
+
+          new_tags=""
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            tag_ver="${tag#rel/release-}"
+
+            if [ "$(printf '%s\n%s\n' "$baseline_ver" "$tag_ver" | sort -V | tail -n 1)" != "$tag_ver" ]; then
+              continue
+            fi
+
+            if [ "$tag_ver" = "$baseline_ver" ]; then
+              continue
+            fi
+
+            if printf '%s\n' "$local_tags" | grep -Fxq "$tag"; then
+              continue
+            fi
+
+            new_tags+="$tag "$'\n'
+          done <<< "$hadoop_tags"
+
+          if [ -z "$new_tags" ]; then
+            echo "No new rel/release-* tags found above ${baseline}."
+            echo "has_new=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          sorted_tags=$(printf '%s' "$new_tags" | sed '/^$/d' | sort -V)
+          latest_tag=$(printf '%s\n' "$sorted_tags" | tail -n 1)
+
+          {
+            echo "has_new=true"
+            echo "latest_tag=$latest_tag"
+            echo "tags<<EOF"
+            printf '%s\n' "$sorted_tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "New tags to build:"
+          printf '%s\n' "$sorted_tags"
+
+      - name: Dispatch build pipeline for each new tag
+        if: steps.tags.outputs.has_new == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REPO_SCOPED_TOKEN != '' && secrets.REPO_SCOPED_TOKEN || secrets.GITHUB_TOKEN }}
+          DISPATCH_REF: ${{ github.event.repository.default_branch }}
+        shell: bash
         run: |
-          cd hadoop
-          echo "Dir: $(pwd)"
-          git fetch origin 'refs/tags/*:refs/tags/*'
-          git tag --sort=-creatordate
-          git tag --sort=-creatordate -l '*release-*'|head -n 1 |tee ../checker/current-release.txt
-      - name: Check for modified files
-        id: git-check
-        run: |
-          cd checker
-          echo modified=$((git status --porcelain | grep -E '^\sM\s') && echo "true" || echo "false") > $GITHUB_STATE
-      - name: Output debug info
-        run: |
-          cd checker
-          echo -n Dir:
-          pwd
-          echo File list:
-          ls -la
-          echo Changed files list:
-          git status --porcelain
-          echo current-release.txt:
-          cat current-release.txt
-      - name: Commit latest release version
-        if: steps.git-check.outputs.modified == 'true'
-        run: |
-          cd checker
-          git config --global user.name 'Update check pipeline'
-          git config --global user.email 'actions@localhost.localdomain'
-          echo "Adding modified files"
-          git add -A
-          echo "Creating commit"
-          git commit -am "Updating latest detected release version to $(cat current-release.txt)"
-          echo "Pushing main"
-          git push
-          echo "Creating tag $(cat current-release.txt)"
-          git tag -a "$(cat current-release.txt)" -m "Trigger tag for $(cat current-release.txt) source branch"
-          echo "Pushing tag"
-          git push origin "$(cat current-release.txt)"
+          set -euo pipefail
+
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            mark_latest=false
+            if [ "$tag" = "${{ steps.tags.outputs.latest_tag }}" ]; then
+              mark_latest=true
+            fi
+
+            echo "Dispatching build-native-libs.yml for ${tag} (mark_latest=${mark_latest})"
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/actions/workflows/build-native-libs.yml/dispatches" \
+              -f ref="$DISPATCH_REF" \
+              -f "inputs[hadoop_ref]=$tag" \
+              -f "inputs[mark_latest]=$mark_latest"
+          done <<< "${{ steps.tags.outputs.tags }}"
