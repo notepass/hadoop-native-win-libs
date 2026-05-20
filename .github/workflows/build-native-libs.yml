@@ -18,12 +18,6 @@ jobs:
         with:
           repository: apache/hadoop
           ref: ${{ inputs.hadoop_ref }}
-      - name: Checkout pipeline repository (helper scripts)
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ github.repository }}
-          ref: ${{ github.sha }}
-          path: pipeline-src
       - name: Cache Maven packages
         uses: actions/cache@v5.0.5
         with:
@@ -33,12 +27,25 @@ jobs:
       - name: Inject compat shim for GetFileInformationByName
         shell: pwsh
         run: |
-          $script = "$env:GITHUB_WORKSPACE\pipeline-src\compat\inject-winutils-shim.ps1"
-          if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
-            Get-ChildItem -Force "$env:GITHUB_WORKSPACE"
-            throw "Missing helper script: $script"
-          }
-          & $script -HadoopRoot "$env:GITHUB_WORKSPACE"
+          # Newer Windows SDK declares GetFileInformationByName in fileapi.h,
+          # while Hadoop winutils also declares one with a different signature.
+          # Include windows.h first, then rename only Hadoop's symbol.
+          $shim = "$env:GITHUB_WORKSPACE\hadoop_win_compat.h"
+          Set-Content -LiteralPath $shim -Encoding ascii -Value @'
+          #pragma once
+          #include <windows.h>
+          #define GetFileInformationByName Hadoop_GetFileInformationByName
+          '@
+
+          Set-Content -LiteralPath "$env:GITHUB_WORKSPACE\Directory.Build.props" -Encoding ascii -Value @"
+          <Project>
+            <ItemDefinitionGroup Condition="'`$(MSBuildProjectName)'=='libwinutils' Or '`$(MSBuildProjectName)'=='winutils'">
+              <ClCompile>
+                <ForcedIncludeFiles>$shim;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+              </ClCompile>
+            </ItemDefinitionGroup>
+          </Project>
+          "@
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Run native build
         run: "mvn package '-Pnative-win' -DskipTests '-Dmaven.javadoc.skip=true' -pl ':hadoop-common,:hadoop-maven-plugins'"
