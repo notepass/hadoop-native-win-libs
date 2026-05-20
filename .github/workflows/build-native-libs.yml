@@ -1,43 +1,52 @@
 name: build-native-win-hadoop-libs
-run-name: Binaries for hadoop release ${{ github.ref_name }}
+run-name: Binaries for hadoop release ${{ inputs.hadoop_ref }}
 on:
-  push:
-    tags:
-      - "**"
   workflow_dispatch:
+    inputs:
+      hadoop_ref:
+        description: "Hadoop tag or branch to build (e.g. rel/release-3.4.1)"
+        required: true
+        type: string
 jobs:
   build-native-libs:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - run: git config --system core.longpaths true
       - uses: actions/checkout@v6
         with:
           repository: apache/hadoop
-          ref: ${{ github.ref_name }}
+          ref: ${{ inputs.hadoop_ref }}
       - name: Cache Maven packages
         uses: actions/cache@v5.0.5
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2
           restore-keys: ${{ runner.os }}-m2
-#      - uses: microsoft/setup-msbuild@v1
-#      - name: Setup VS Dev Environment
-#        uses: seanmiddleditch/gha-setup-vsdevenv@v4
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          sdk: "10.0.19041.0"
-      - name: Pre debug output
+      - name: Inject compat shim for GetFileInformationByName
+        shell: pwsh
         run: |
-          msbuild /version
-          mvn -v
-          gci env:* | sort-object name
-          echo "Ref name: $env:GITHUB_REF_NAME"
-          echo "Repo: $env:GITHUB_REPOSITORY"
-          echo "Workspace dir: $env:GITHUB_WORKSPACE"
-      - run: "pwd"
-#      - run: mvn dependency:resolve
-#      - run: devenv
-#      - run: "mvn install -Pdist -DskipTests '-Dmaven.javadoc.skip=true' -pl :hadoop-maven-plugins"
+          # Newer Windows SDK declares GetFileInformationByName in fileapi.h,
+          # while Hadoop winutils also declares one with a different signature.
+          # Include windows.h first, then rename only Hadoop's symbol.
+          $shim = "$env:GITHUB_WORKSPACE\hadoop_win_compat.h"
+          Set-Content -LiteralPath $shim -Encoding ascii -Value @'
+          #pragma once
+          #include <windows.h>
+          #define GetFileInformationByName Hadoop_GetFileInformationByName
+          '@
+
+          Set-Content -LiteralPath "$env:GITHUB_WORKSPACE\Directory.Build.props" -Encoding ascii -Value @"
+          <Project>
+            <ItemDefinitionGroup Condition="'`$(MSBuildProjectName)'=='libwinutils' Or '`$(MSBuildProjectName)'=='winutils'">
+              <ClCompile>
+                <ForcedIncludeFiles>$shim;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+              </ClCompile>
+            </ItemDefinitionGroup>
+          </Project>
+          "@
+      - uses: ilammy/msvc-dev-cmd@v1
       - name: Run native build
         run: "mvn package '-Pnative-win' -DskipTests '-Dmaven.javadoc.skip=true' -pl ':hadoop-common,:hadoop-maven-plugins'"
         continue-on-error: false
@@ -45,15 +54,14 @@ jobs:
         run: |
           cd "$env:GITHUB_WORKSPACE\hadoop-common-project\hadoop-common\target"
           Compress-Archive -Path .\bin -DestinationPath "$env:GITHUB_WORKSPACE\hadoop-win-utils.zip"
-      - name: Create release (gh cmd)
-        if: ${{ startsWith(github.ref_name, 'rel/') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_SECRET }}
-        run: |
-          gh release create --latest -R "$env:GITHUB_REPOSITORY" -n "Windows binaries for hadoop release $env:GITHUB_REF_NAME" -t "$env:GITHUB_REF_NAME" --verify-tag "$env:GITHUB_REF_NAME" "$env:GITHUB_WORKSPACE\hadoop-win-utils.zip"
-      - name: Create pre-release (gh cmd)
-        if: ${{ !startsWith(github.ref_name, 'rel/') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_SECRET }}
-        run: |
-          gh release create -p -R "$env:GITHUB_REPOSITORY" -n "Windows binaries for hadoop release $env:GITHUB_REF_NAME" -t "$env:GITHUB_REF_NAME" --verify-tag "$env:GITHUB_REF_NAME" "$env:GITHUB_WORKSPACE\hadoop-win-utils.zip"
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          repository: ${{ github.repository }}
+          tag_name: ${{ inputs.hadoop_ref }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ inputs.hadoop_ref }}
+          body: "Binaries for hadoop version ${{ inputs.hadoop_ref }}"
+          prerelease: ${{ !startsWith(inputs.hadoop_ref, 'rel/') }}
+          make_latest: ${{ startsWith(inputs.hadoop_ref, 'rel/') && 'true' || 'false' }}
+          files: ${{ github.workspace }}\hadoop-win-utils.zip
