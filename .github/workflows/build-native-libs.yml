@@ -20,7 +20,7 @@ jobs:
       issues: write
     steps:
       - run: git config --system core.longpaths true
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: apache/hadoop
           ref: ${{ inputs.hadoop_ref }}
